@@ -1,0 +1,31 @@
+{
+  "api_providers": {
+    "description": "图像模型供应商",
+    "type": "template_list",
+    "hint": "点击新增配置，分别填写多个供应商",
+    "templates": {
+      "openai": {"name": "OpenAI 兼容", "display_item": "name", "items": {
+        "name": {"description": "供应商名称", "type": "string", "default": ""},
+        "api_base": {"description": "API 地址", "type": "string", "default": ""},
+        "api_key": {"description": "API Key", "type": "string", "default": "", "obvious_hint": true},
+        "model": {"description": "模型名称", "type": "string", "default": "auto"},
+        "generate_size": {"description": "生图尺寸", "type": "string", "options": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"], "default": "auto", "hint": "auto 按生图提示词中的比例或横竖版描述判断"},
+        "edit_size": {"description": "改图尺寸", "type": "string", "options": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"], "default": "auto", "hint": "auto 根据原图宽高匹配最近比例"},
+        "retry_count": {"description": "失败重试次数", "type": "int", "default": 1}
+      }},
+      "claude": {"name": "Claude 兼容", "display_item": "name", "items": {
+        "name": {"description": "供应商名称", "type": "string", "default": ""},
+        "api_base": {"description": "API 地址", "type": "string", "default": ""},
+        "api_key": {"description": "API Key", "type": "string", "default": "", "obvious_hint": true},
+        "model": {"description": "模型名称", "type": "string", "default": "auto"},
+        "generate_size": {"description": "生图尺寸", "type": "string", "options": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"], "default": "auto", "hint": "auto 按生图提示词中的比例或横竖版描述判断"},
+        "edit_size": {"description": "改图尺寸", "type": "string", "options": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"], "default": "auto", "hint": "auto 根据原图宽高匹配最近比例"},
+        "retry_count": {"description": "失败重试次数", "type": "int", "default": 1}
+      }}
+    },
+    "default": []
+  },
+  "timeout_sec": {"description": "请求超时（秒）", "type": "int", "default": 60},
+  "generate_progress": {"description": "生图开始提示", "type": "string", "default": "已收到生图请求，正在生成图片，请稍候…"},
+  "edit_progress": {"description": "改图开始提示", "type": "string", "default": "已收到改图请求，正在处理图片，请稍候…"}
+}

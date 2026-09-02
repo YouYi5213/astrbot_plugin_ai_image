@@ -1,0 +1,10 @@
+name: astrbot_plugin_ai_image
+display_name: AI 生图与改图
+desc: 支持 OpenAI 图片接口及 Anthropic 兼容网关的 QQ 群生图、图片二创插件
+short_desc: 使用「生图」和「改图」在群聊中生成或编辑图片
+version: 0.1.0
+author: Hermes Project
+repo: https://github.com/Hermes-Project/astrbot_plugin_ai_image
+support_platforms:
+  - aiocqhttp
+astrbot_version: ">=4.16"
