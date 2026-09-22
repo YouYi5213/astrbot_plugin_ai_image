@@ -6,6 +6,7 @@
     "templates": {
       "openai": {"name": "OpenAI 兼容", "display_item": "name", "items": {
         "name": {"description": "供应商名称", "type": "string", "default": ""},
+        "provider": {"description": "接口类型", "type": "string", "options": ["openai", "grok", "claude"], "default": "openai"},
         "api_base": {"description": "API 地址", "type": "string", "default": ""},
         "api_key": {"description": "API Key", "type": "string", "default": "", "obvious_hint": true},
         "model": {"description": "模型名称", "type": "string", "default": "auto"},
@@ -15,11 +16,22 @@
       }},
       "claude": {"name": "Claude 兼容", "display_item": "name", "items": {
         "name": {"description": "供应商名称", "type": "string", "default": ""},
+        "provider": {"description": "接口类型", "type": "string", "options": ["openai", "grok", "claude"], "default": "claude"},
         "api_base": {"description": "API 地址", "type": "string", "default": ""},
         "api_key": {"description": "API Key", "type": "string", "default": "", "obvious_hint": true},
         "model": {"description": "模型名称", "type": "string", "default": "auto"},
         "generate_size": {"description": "生图尺寸", "type": "string", "options": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"], "default": "auto", "hint": "auto 按生图提示词中的比例或横竖版描述判断"},
         "edit_size": {"description": "改图尺寸", "type": "string", "options": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"], "default": "auto", "hint": "auto 根据原图宽高匹配最近比例"},
+        "retry_count": {"description": "失败重试次数", "type": "int", "default": 1}
+      }},
+      "grok": {"name": "Grok 兼容", "display_item": "name", "items": {
+        "name": {"description": "供应商名称", "type": "string", "default": ""},
+        "provider": {"description": "接口类型", "type": "string", "options": ["openai", "grok", "claude"], "default": "grok"},
+        "api_base": {"description": "API 地址", "type": "string", "default": "https://api.x.ai/v1"},
+        "api_key": {"description": "API Key", "type": "string", "default": "", "obvious_hint": true},
+        "model": {"description": "模型名称", "type": "string", "default": "grok-imagine-image-2.0"},
+        "generate_size": {"description": "生图尺寸", "type": "string", "options": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"], "default": "auto"},
+        "edit_size": {"description": "改图尺寸", "type": "string", "options": ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16"], "default": "auto"},
         "retry_count": {"description": "失败重试次数", "type": "int", "default": 1}
       }}
     },

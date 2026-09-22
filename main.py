@@ -73,6 +73,13 @@ def _find_image_urls(value: Any, seen: set[int] | None = None) -> list[str]:
             candidate = data.get(key)
             if isinstance(candidate, str) and candidate:
                 result.append(candidate)
+        nested = data.get("data")
+        nested_data = _as_dict(nested)
+        if nested_data:
+            for key in ("url", "file", "path", "src"):
+                candidate = nested_data.get(key)
+                if isinstance(candidate, str) and candidate:
+                    result.append(candidate)
     for key, child in data.items():
         if key not in {"url", "file", "path", "src"}:
             result.extend(_find_image_urls(child, seen))
@@ -95,6 +102,9 @@ def _find_at_ids(value: Any, seen: set[int] | None = None) -> list[str]:
     result: list[str] = []
     if (typ.endswith(".at") or typ in {"at", "componenttype.at"} or class_name == "at") and str(data.get("qq", "")) != "all":
         qq = str(data.get("qq", "")).strip()
+        if not qq:
+            nested_data = _as_dict(data.get("data"))
+            qq = str((nested_data or {}).get("qq", "")).strip()
         if qq:
             result.append(qq)
     for key, child in data.items():
@@ -198,7 +208,7 @@ class AiImagePlugin(Star):
         return {"authorization": f"Bearer {key}", "content-type": "application/json"}
 
     def _base(self) -> str:
-        return str(self._cfg("api_base", "https://api.openai.com/v1") or "").rstrip("/")
+        return str(self._cfg("api_base", "") or "https://api.openai.com/v1").rstrip("/")
 
     async def _list_models(self, refresh: bool = False) -> list[str]:
         """读取 OpenAI/Anthropic 兼容网关的模型列表。"""
@@ -224,10 +234,10 @@ class AiImagePlugin(Star):
         if configured and configured.lower() != "auto":
             return configured
         provider = str(self._cfg("provider", "openai")).lower()
-        fallback = "gpt-image-1" if provider == "openai" else "claude-3-5-sonnet-latest"
+        fallback = "grok-imagine-image-2.0" if provider == "grok" else ("gpt-image-1" if provider == "openai" else "claude-3-5-sonnet-latest")
         try:
             models = await self._list_models()
-            hints = ("image", "dall", "gpt-image") if provider == "openai" else ("image", "claude")
+            hints = ("image", "grok") if provider == "grok" else (("image", "dall", "gpt-image") if provider == "openai" else ("image", "claude"))
             for model in models:
                 if any(hint in model.lower() for hint in hints):
                     return model
@@ -302,8 +312,27 @@ class AiImagePlugin(Star):
     async def _openai(self, prompt: str, image: str | None) -> str:
         client = await self._http()
         headers = self._headers()
+        provider = str(self._cfg("provider", "openai")).lower()
         if image:
             path = await self._download(image)
+            if provider == "grok":
+                raw = Path(path).read_bytes()
+                media = self._image_media_type(path)
+                image_data = f"data:{media};base64,{base64.b64encode(raw).decode()}"
+                response = await client.post(
+                    f"{self._base()}/images/generations",
+                    headers=headers,
+                    json={
+                        "model": await self._model(),
+                        "prompt": prompt,
+                        "image": [image_data],
+                        "n": 1,
+                    },
+                )
+                logger.info(f"[{_PLUGIN_NAME}] Grok 图片 API 响应 HTTP {response.status_code}")
+                response.raise_for_status()
+                payload = response.json()
+                return await self._extract_openai_image(payload)
             size = await self._resolve_size(prompt, path, "edit_size")
             with open(path, "rb") as handle:
                 response = await client.post(
@@ -317,13 +346,19 @@ class AiImagePlugin(Star):
         logger.info(f"[{_PLUGIN_NAME}] 图片 API 响应 HTTP {response.status_code}")
         response.raise_for_status()
         payload = response.json()
-        item = (payload.get("data") or [{}])[0]
-        if item.get("url"):
-            return await self._download(item["url"])
-        if item.get("b64_json"):
+        return await self._extract_openai_image(payload)
+
+    async def _extract_openai_image(self, payload: Any) -> str:
+        items = payload.get("data") or payload.get("images") or []
+        item = items[0] if isinstance(items, list) and items else payload
+        image_url = item.get("url") or item.get("image_url") or item.get("imageUrl")
+        if image_url:
+            return await self._download(image_url)
+        encoded = item.get("b64_json") or item.get("b64") or item.get("base64")
+        if encoded:
             fd, path = tempfile.mkstemp(prefix="astrbot-ai-image-", suffix=".png")
             os.close(fd)
-            Path(path).write_bytes(base64.b64decode(item["b64_json"]))
+            Path(path).write_bytes(base64.b64decode(encoded))
             self._temp_paths.add(path)
             return path
         raise RuntimeError("API 未返回图片")

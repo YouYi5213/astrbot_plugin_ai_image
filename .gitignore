@@ -3,3 +3,5 @@ __pycache__/
 .pytest_cache/
 .env
 *.log
+.usage_stats.json
+.usage_stats.json.tmp
