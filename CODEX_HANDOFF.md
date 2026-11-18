@@ -1,6 +1,6 @@
 # Codex 项目记忆 / 交接记录
 
-> 最后更新：2026-09-22
+> 最后更新：2026-11-17
 
 ## 项目定位
 
@@ -15,10 +15,10 @@
 ## 当前代码状态
 
 - 基线提交：`f51b748`（`feat: add AI image generation plugin`）
-- 工作区存在未提交改动：`main.py`、`_conf_schema.json`、`README.md`
+- 工作区存在未提交改动：`main.py`、`_conf_schema.json`、`README.md`、`metadata.yaml`
 - `ANALYSIS.md` 是静态分析报告，记录了已验证问题和待处理风险
 - 依赖：`httpx>=0.27`、`Pillow>=10.0`
-- 支持平台：`aiocqhttp`
+- 支持平台：`aiocqhttp`、`qq_official`、`qq_official_webhook`
 - AstrBot 版本声明：`>=4.16`
 
 ## 已知实现重点
@@ -34,6 +34,8 @@
 - 新增 `provider=grok` 配置模板，默认模型 `grok-imagine-image-2.0`，默认地址可填 `https://api.x.ai/v1`。
 - Grok 复用 OpenAI Images 请求路径，并兼容 `url`、`image_url`、`imageUrl`、`b64_json`、`b64`、`base64` 图片返回字段。
 - 修复 OneBot `image.data.url` 和 `at.data.qq` 嵌套字段提取；空 `api_base` 回退到官方 OpenAI 地址。
+- 新增 `max_concurrent_requests` 控制同一供应商的并发请求数；请求上下文使用 `ContextVar` 隔离，故障错误按供应商逐行简化并引用原消息回复。
+- 图像接口响应 JSON 的 `code=400` 视为请求被拒绝：直接引用原消息回复上游 `message`，停止当前供应商重试和后续供应商切换；其他错误仍按配置故障转移。
 
 ### 本次统计功能变更
 
@@ -42,6 +44,16 @@
 - 私聊只读取 `private` 范围，不展示群成员数据。
 - 统计文件已加入 `.gitignore`，不进入仓库，也不写入 AstrBot 的 API 配置。
 - 统计只在接口成功返回图片后增加次数。
+
+### 本次多平台适配（QQ 官方机器人）
+
+- `metadata.yaml` 新增 `qq_official`、`qq_official_webhook`。
+- 图片读取优先使用 AstrBot `Image` 组件，支持 URL、本地路径、`base64://`、`data:image/...`，并用组件 `convert_to_file_path()` 兜底。
+- @ 提取优先使用 `At` 组件，跳过 `AtAll`、机器人自身以及 `qq_official`/`unknown_selfid` 占位 ID；保留 CQ 正则兜底。
+- QQ 官方机器人头像使用 `https://q.qlogo.cn/qqapp/{appid}/{openid}/100`，appid 取自 `event.bot.platform.appid`；OneBot 仍按 QQ 号获取头像。
+- 发送仍使用 `event.image_result()`，未做平台特判；QQ 官方适配器可直接读取本地文件并上传。
+- 验证：`py_compile`、Schema JSON、桩测试（头像/At/图片/引用/base64/data/file URI）通过；**未在真实官方机器人实例上验证**。
+- 下一步：在真实 `qq_official` 实例验证生图、带图改图、引用改图、@头像；验证通过后再考虑声明 `telegram`、`discord`。
 
 ## 已知问题与优先级
 

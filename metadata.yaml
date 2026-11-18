@@ -7,4 +7,6 @@ author: Hermes Project
 repo: https://github.com/Hermes-Project/astrbot_plugin_ai_image
 support_platforms:
   - aiocqhttp
+  - qq_official
+  - qq_official_webhook
 astrbot_version: ">=4.16"
