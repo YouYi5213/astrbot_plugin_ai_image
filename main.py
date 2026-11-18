@@ -7,6 +7,8 @@ import json
 import os
 import re
 import tempfile
+import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote, urlparse
@@ -24,6 +26,8 @@ _PLUGIN_NAME = "astrbot_plugin_ai_image"
 # Some adapters use placeholder IDs instead of a real user. Never treat these
 # as @-targets (QQ official C2C/group adapters use "qq_official" / openids).
 _AT_SENTINELS = {"all", "qq_official", "unknown_selfid"}
+_RECENT_IMAGE_TTL_DEFAULT = 1800
+_RECENT_IMAGE_MAX_ENTRIES = 500
 _MEDIA_PREFIX = (
     r"(?:(?:\[[^\]]+\]|<@!?[^>\s]+>|<qqbot-at-user\s+[^>]*/>)\s*)*"
 )
@@ -146,6 +150,10 @@ class AiImagePlugin(Star):
         )
         self._request_slots: asyncio.Semaphore | None = None
         self._request_slots_count = 0
+        # (会话, 发送者) -> (时间戳, 图片候选地址)；用户先发图、再发指令时使用。
+        self._recent_images: OrderedDict[
+            tuple[str, str], tuple[float, list[str]]
+        ] = OrderedDict()
 
     def _cfg(self, key: str, default: Any = "") -> Any:
         profiles = self._profiles()
@@ -670,6 +678,79 @@ class AiImagePlugin(Star):
                 scan(payload)
         return list(dict.fromkeys(urls))
 
+    def _recent_image_ttl(self) -> int:
+        try:
+            return max(
+                0,
+                int(
+                    self.config.get("recent_image_ttl_sec", _RECENT_IMAGE_TTL_DEFAULT)
+                    or 0
+                ),
+            )
+        except (TypeError, ValueError):
+            return _RECENT_IMAGE_TTL_DEFAULT
+
+    @staticmethod
+    def _recent_image_key(event: AstrMessageEvent) -> tuple[str, str]:
+        try:
+            sender = str(event.get_sender_id() or "")
+        except Exception:
+            sender = ""
+        if not sender:
+            sender = str(
+                getattr(
+                    getattr(getattr(event, "message_obj", None), "sender", None),
+                    "user_id",
+                    "",
+                )
+                or ""
+            )
+        return str(getattr(event, "unified_msg_origin", "") or ""), sender
+
+    def _quick_image_refs(self, event: AstrMessageEvent) -> list[str]:
+        """不下载，只收集第一条消息图片的候选地址，供最近图片缓存使用。"""
+        refs: list[str] = []
+        for component in self._message_components(event):
+            if not isinstance(component, AstrImage):
+                continue
+            for value in (component.path, component.url, component.file):
+                source = str(value or "").strip()
+                if source and source not in refs:
+                    refs.append(source)
+            if refs:
+                break
+        refs.extend(self._raw_image_urls(event))
+        return list(dict.fromkeys(refs))
+
+    def _remember_recent_images(self, event: AstrMessageEvent, refs: list[str]) -> None:
+        ttl = self._recent_image_ttl()
+        refs = [ref for ref in refs if ref]
+        if ttl <= 0 or not refs:
+            return
+        key = self._recent_image_key(event)
+        self._recent_images[key] = (time.monotonic(), refs)
+        self._recent_images.move_to_end(key)
+        while len(self._recent_images) > _RECENT_IMAGE_MAX_ENTRIES:
+            self._recent_images.popitem(last=False)
+
+    async def _take_recent_image(self, event: AstrMessageEvent) -> str | None:
+        key = self._recent_image_key(event)
+        entry = self._recent_images.get(key)
+        if not entry:
+            return None
+        ttl = self._recent_image_ttl()
+        stamp, refs = entry
+        if ttl <= 0 or time.monotonic() - stamp > ttl:
+            self._recent_images.pop(key, None)
+            return None
+        for ref in refs:
+            try:
+                return await self._download(ref)
+            except Exception as exc:
+                logger.debug(f"[{_PLUGIN_NAME}] 最近图片不可用: {exc}")
+        self._recent_images.pop(key, None)
+        return None
+
     async def _event_images(self, event: AstrMessageEvent) -> list[str]:
         message_obj = getattr(event, "message_obj", None)
         urls: list[str] = []
@@ -764,6 +845,18 @@ class AiImagePlugin(Star):
         """匹配媒体占位前缀后的命令，如“[图片] 改图 ...”。"""
         return pattern.search((message or "").strip())
 
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=30)
+    async def remember_recent_image(self, event: AstrMessageEvent):
+        """记录用户最近发送的图片，供之后未附图时改图使用。"""
+        if self._recent_image_ttl() <= 0:
+            return
+        try:
+            refs = self._quick_image_refs(event)
+            if refs:
+                self._remember_recent_images(event, refs)
+        except Exception as exc:
+            logger.debug(f"[{_PLUGIN_NAME}] 记录最近图片失败: {exc}")
+
     @filter.regex(_MODELS_RE, priority=21)
     async def models(self, event: AstrMessageEvent):
         """列出当前 API 可用模型，便于填写 model 配置。"""
@@ -818,17 +911,24 @@ class AiImagePlugin(Star):
                     f"[{_PLUGIN_NAME}] 当前平台无法构造被艾特用户头像，"
                     f"qq={at_ids[0]}，platform={self._platform_name(event)}"
                 )
+        if not images:
+            recent = await self._take_recent_image(event)
+            if recent:
+                images = [recent]
+                logger.info(
+                    f"[{_PLUGIN_NAME}] 未找到消息图片，使用该用户最近发送的图片"
+                )
         logger.info(f"[{_PLUGIN_NAME}] 命中改图命令，描述长度={len(prompt)}，识别图片数={len(images)}，艾特数={len(at_ids)}，消息={raw[:120]!r}")
         if not images:
             if at_ids:
                 yield event.plain_result("当前平台无法自动获取被艾特用户的头像，请附带或引用一张图片后重试。")
             elif self._platform_name(event) in {"qq_official", "qq_official_webhook"}:
                 yield event.plain_result(
-                    "QQ 官方机器人收不到被引用消息里的图片，请把图片和「改图 <描述>」放在同一条消息中发送；"
-                    "也可以艾特一位用户使用其头像。"
+                    "QQ 官方机器人收不到被引用消息里的图片。请把图片和「改图 <描述>」放在同一条消息中发送；"
+                    "也可以先发一张图片（群里需同时 @我），再发送「改图 <描述>」，插件会使用你最近发送的图片。"
                 )
             else:
-                yield event.plain_result("请附带或引用一张图片；也可以艾特一位 QQ 用户后发送「改图 <描述>」，插件会使用其头像。")
+                yield event.plain_result("请附带或引用一张图片；也可以先发一张图片，再发送「改图 <描述>」。")
             return
         if not prompt:
             yield event.plain_result("用法：改图 <描述>，例如：改图 把脸部优化得自然一些")

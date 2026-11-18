@@ -43,6 +43,7 @@
   "max_concurrent_requests": {"description": "同时处理的生图/改图请求数", "type": "int", "default": 1, "hint": "同一供应商可并行处理；超过数量的请求排队"},
   "default_provider": {"description": "首选供应商名称（留空则按 priority 顺序）", "type": "string", "default": ""},
   "timeout_sec": {"description": "请求超时（秒）", "type": "int", "default": 60},
+  "recent_image_ttl_sec": {"description": "最近图片缓存时间（秒）", "type": "int", "default": 1800, "hint": "改图没有附图/引用图时，复用同一用户在同一会话最近发送的图片；0 关闭"},
   "generate_progress": {"description": "生图开始提示", "type": "string", "default": "已收到生图请求，正在生成图片，请稍候…"},
   "edit_progress": {"description": "改图开始提示", "type": "string", "default": "已收到改图请求，正在处理图片，请稍候…"}
 }

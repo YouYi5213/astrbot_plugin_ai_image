@@ -10,6 +10,8 @@ AstrBot QQ 群 AI 生图与图片二创插件。
 
 图片读取与发送使用 AstrBot 统一消息组件。QQ 官方机器人的用户 ID 是 openid，插件会用 `appid + openid` 构造头像地址；OneBot 平台仍按 QQ 号获取头像。
 
+QQ 官方机器人不会把被引用消息中的图片传给插件。可以把图片和指令放在同一条消息中发送，或者先发一张图片（群里需同时 @机器人），再发送「改图 <描述>」，插件会复用该用户在同一会话最近发送的图片。
+
 ## 命令
 
 - `生图 生成一副随机油画`
@@ -28,6 +30,7 @@ AstrBot QQ 群 AI 生图与图片二创插件。
 
 - 每个 `api_providers` 条目填写 `provider=openai`、`provider=grok` 或 `provider=claude`、`api_base`、`api_key`、`model` 和尺寸设置。Grok 使用 OpenAI 兼容的 `/images/generations` 和 `/images/edits` 接口，默认模型为 `grok-imagine-image-2.0`；OpenAI 同样调用这两个接口；Claude 调用 Anthropic Messages API。
 - `timeout_sec` 是请求超时；未填写 `api_base` 会直接报配置错误，不会自动把请求发送到其他服务。
+- `recent_image_ttl_sec` 控制最近图片缓存时间，默认 `1800` 秒；改图没有附图/引用图时复用同一用户在同一会话最近发送的图片，设置为 `0` 关闭。
 - `max_concurrent_requests` 控制同一供应商同时处理的生图/改图数量，默认 `1`；超过数量的请求排队等待，设置为 `2` 或 `3` 可开启并行处理。
 - `cooldown_sec` 可限制同一用户连续调用的频率，设置为 `0` 关闭；`allowed_users` 和 `allowed_groups` 可填写白名单 ID，多个 ID 用逗号或空格分隔，留空表示不限制。
 - `generate_progress`、`edit_progress` 可自定义开始处理时的提示文案，留空可关闭提示。
