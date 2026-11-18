@@ -24,7 +24,9 @@ _PLUGIN_NAME = "astrbot_plugin_ai_image"
 # Some adapters use placeholder IDs instead of a real user. Never treat these
 # as @-targets (QQ official C2C/group adapters use "qq_official" / openids).
 _AT_SENTINELS = {"all", "qq_official", "unknown_selfid"}
-_MEDIA_PREFIX = r"(?:\[[^\]]+\]\s*)*"
+_MEDIA_PREFIX = (
+    r"(?:(?:\[[^\]]+\]|<@!?[^>\s]+>|<qqbot-at-user\s+[^>]*/>)\s*)*"
+)
 _GEN_RE = re.compile(rf"^\s*{_MEDIA_PREFIX}/?(?:生图|生成图片|画图)\s*(.*?)\s*$", re.S)
 _EDIT_RE = re.compile(rf"^\s*{_MEDIA_PREFIX}/?(?:改图|图片二创|编辑图片)\s*(.*?)\s*$", re.S)
 _MODELS_RE = re.compile(r"^/?(?:生图模型|图片模型|AI模型)\s*$", re.I)
