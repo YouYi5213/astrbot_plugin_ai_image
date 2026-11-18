@@ -49,6 +49,7 @@
 
 - `metadata.yaml` 新增 `qq_official`、`qq_official_webhook`。
 - 图片读取优先使用 AstrBot `Image` 组件，支持 URL、本地路径、`base64://`、`data:image/...`，并用组件 `convert_to_file_path()` 兜底；部分 AstrBot 版本不解析引用附件，额外读取原始 `msg_elements`/`attachments`。
+- QQ 官方机器人事件可能只带 `message_reference`、不带 `msg_elements`/`attachments`，此时被引用图片无法读取，提示用户把图片和指令放在同一条消息中发送。
 - 命令前缀兼容 `[图片]`、`[At:...]`、`[引用消息]`、`<@openid>`、`<qqbot-at-user .../>` 等平台标记。
 - @ 提取优先使用 `At` 组件，跳过 `AtAll`、机器人自身以及 `qq_official`/`unknown_selfid` 占位 ID；保留 CQ 正则兜底。
 - QQ 官方机器人头像使用 `https://q.qlogo.cn/qqapp/{appid}/{openid}/100`，appid 取自 `event.bot.platform.appid`；OneBot 仍按 QQ 号获取头像。

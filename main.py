@@ -822,6 +822,11 @@ class AiImagePlugin(Star):
         if not images:
             if at_ids:
                 yield event.plain_result("当前平台无法自动获取被艾特用户的头像，请附带或引用一张图片后重试。")
+            elif self._platform_name(event) in {"qq_official", "qq_official_webhook"}:
+                yield event.plain_result(
+                    "QQ 官方机器人收不到被引用消息里的图片，请把图片和「改图 <描述>」放在同一条消息中发送；"
+                    "也可以艾特一位用户使用其头像。"
+                )
             else:
                 yield event.plain_result("请附带或引用一张图片；也可以艾特一位 QQ 用户后发送「改图 <描述>」，插件会使用其头像。")
             return
