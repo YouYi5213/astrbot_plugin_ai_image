@@ -602,6 +602,63 @@ class AiImagePlugin(Star):
             return f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=640"
         return None
 
+    @staticmethod
+    def _attachment_urls(container: Any) -> list[str]:
+        """从 attachments 列表中提取图片 URL（兼容 dict / 对象字段）。"""
+        data = _as_dict(container)
+        if not isinstance(data, dict):
+            return []
+        attachments = data.get("attachments")
+        if not isinstance(attachments, list):
+            return []
+        image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+        urls: list[str] = []
+        for attachment in attachments:
+            info = _as_dict(attachment)
+            if not isinstance(info, dict):
+                continue
+            content_type = str(
+                info.get("content_type") or info.get("contentType") or ""
+            ).lower()
+            filename = str(info.get("filename") or info.get("name") or "")
+            url = str(info.get("url") or "").strip()
+            if not url:
+                continue
+            if content_type.startswith("image") or Path(filename).suffix.lower() in image_exts:
+                if not url.startswith(("http://", "https://")):
+                    url = f"https://{url}"
+                urls.append(url)
+        return urls
+
+    @staticmethod
+    def _raw_image_urls(event: AstrMessageEvent) -> list[str]:
+        """兜底：从原始消息的 msg_elements / attachments 读取图片。
+
+        部分 AstrBot 版本的 QQ 官方适配器不会把被引用消息的附件写进
+        Reply.chain，此时消息链里没有 Image 组件，只能读原始 payload。
+        """
+        message_obj = getattr(event, "message_obj", None)
+        raw = getattr(message_obj, "raw_message", None)
+        data = _as_dict(raw)
+        if not isinstance(data, dict):
+            return []
+        containers: list[Any] = [data]
+        raw_data = data.get("raw_data")
+        if isinstance(raw_data, dict):
+            containers.append(raw_data)
+            payload = raw_data.get("d")
+            if isinstance(payload, dict):
+                containers.append(payload)
+        urls: list[str] = []
+        for container in containers:
+            info = _as_dict(container)
+            if not isinstance(info, dict):
+                continue
+            urls.extend(AiImagePlugin._attachment_urls(info))
+            for element in info.get("msg_elements") or []:
+                urls.extend(AiImagePlugin._attachment_urls(element))
+        return list(dict.fromkeys(urls))
+
     async def _event_images(self, event: AstrMessageEvent) -> list[str]:
         message_obj = getattr(event, "message_obj", None)
         urls: list[str] = []
@@ -622,6 +679,7 @@ class AiImagePlugin(Star):
                     urls.append(await converter())
                 except Exception as exc:
                     logger.warning(f"[{_PLUGIN_NAME}] 无法读取消息图片: {exc}")
+        urls.extend(self._raw_image_urls(event))
         values = [
             getattr(message_obj, "message", None),
             getattr(event, "message_chain", None),
@@ -630,7 +688,23 @@ class AiImagePlugin(Star):
             message_obj,
         ]
         urls.extend(url for value in values for url in _find_image_urls(value))
-        return list(dict.fromkeys(urls))
+        urls = list(dict.fromkeys(urls))
+        if not urls:
+            components = self._message_components(event)
+            component_names = [type(component).__name__ for component in components]
+            reply_chains = [
+                [type(item).__name__ for item in (getattr(component, "chain", None) or [])]
+                for component in components
+                if isinstance(component, Reply)
+            ]
+            raw = getattr(message_obj, "raw_message", None)
+            raw_data = _as_dict(raw)
+            raw_keys = sorted(raw_data.keys()) if isinstance(raw_data, dict) else []
+            logger.info(
+                f"[{_PLUGIN_NAME}] 消息中未找到图片：组件={component_names}，"
+                f"引用链={reply_chains}，raw_type={type(raw).__name__}，raw_keys={raw_keys}"
+            )
+        return urls
 
     def _event_at_ids(self, event: AstrMessageEvent) -> list[str]:
         message_obj = getattr(event, "message_obj", None)
