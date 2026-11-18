@@ -49,6 +49,13 @@ def _as_dict(value: Any) -> dict[str, Any] | None:
     return getattr(value, "__dict__", None)
 
 
+def _field(value: Any, key: str) -> Any:
+    """读取字典或使用 __slots__ 的适配器对象字段。"""
+    if isinstance(value, dict):
+        return value.get(key)
+    return getattr(value, key, None)
+
+
 def _find_image_urls(value: Any, seen: set[int] | None = None) -> list[str]:
     """从 AstrBot/OneBot 消息链中递归提取图片 URL 或本地路径。"""
     seen = seen or set()
@@ -606,24 +613,22 @@ class AiImagePlugin(Star):
 
     @staticmethod
     def _attachment_urls(container: Any) -> list[str]:
-        """从 attachments 列表中提取图片 URL（兼容 dict / 对象字段）。"""
-        data = _as_dict(container)
-        if not isinstance(data, dict):
-            return []
-        attachments = data.get("attachments")
+        """从 attachments 列表中提取图片 URL（兼容 dict / __slots__ 对象）。"""
+        attachments = _field(container, "attachments")
         if not isinstance(attachments, list):
             return []
         image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
         urls: list[str] = []
         for attachment in attachments:
-            info = _as_dict(attachment)
-            if not isinstance(info, dict):
-                continue
             content_type = str(
-                info.get("content_type") or info.get("contentType") or ""
+                _field(attachment, "content_type")
+                or _field(attachment, "contentType")
+                or ""
             ).lower()
-            filename = str(info.get("filename") or info.get("name") or "")
-            url = str(info.get("url") or "").strip()
+            filename = str(
+                _field(attachment, "filename") or _field(attachment, "name") or ""
+            )
+            url = str(_field(attachment, "url") or "").strip()
             if not url:
                 continue
             if content_type.startswith("image") or Path(filename).suffix.lower() in image_exts:
@@ -637,28 +642,32 @@ class AiImagePlugin(Star):
         """兜底：从原始消息的 msg_elements / attachments 读取图片。
 
         部分 AstrBot 版本的 QQ 官方适配器不会把被引用消息的附件写进
-        Reply.chain，此时消息链里没有 Image 组件，只能读原始 payload。
+        Reply.chain，且消息对象使用 __slots__（没有 __dict__），
+        只能按属性读取原始 payload。
         """
         message_obj = getattr(event, "message_obj", None)
         raw = getattr(message_obj, "raw_message", None)
-        data = _as_dict(raw)
-        if not isinstance(data, dict):
+        if raw is None:
             return []
-        containers: list[Any] = [data]
-        raw_data = data.get("raw_data")
-        if isinstance(raw_data, dict):
-            containers.append(raw_data)
-            payload = raw_data.get("d")
-            if isinstance(payload, dict):
-                containers.append(payload)
+
         urls: list[str] = []
-        for container in containers:
-            info = _as_dict(container)
-            if not isinstance(info, dict):
-                continue
-            urls.extend(AiImagePlugin._attachment_urls(info))
-            for element in info.get("msg_elements") or []:
-                urls.extend(AiImagePlugin._attachment_urls(element))
+
+        def scan(container: Any) -> None:
+            if container is None:
+                return
+            urls.extend(AiImagePlugin._attachment_urls(container))
+            elements = _field(container, "msg_elements")
+            if isinstance(elements, list):
+                for element in elements:
+                    urls.extend(AiImagePlugin._attachment_urls(element))
+
+        scan(raw)
+        raw_data = _field(raw, "raw_data")
+        if raw_data is not None and raw_data is not raw:
+            scan(raw_data)
+            payload = _field(raw_data, "d")
+            if payload is not None:
+                scan(payload)
         return list(dict.fromkeys(urls))
 
     async def _event_images(self, event: AstrMessageEvent) -> list[str]:
@@ -700,11 +709,21 @@ class AiImagePlugin(Star):
                 if isinstance(component, Reply)
             ]
             raw = getattr(message_obj, "raw_message", None)
-            raw_data = _as_dict(raw)
+            raw_data = _field(raw, "raw_data")
             raw_keys = sorted(raw_data.keys()) if isinstance(raw_data, dict) else []
+            elements = _field(raw, "msg_elements")
+            if elements is None and isinstance(raw_data, dict):
+                elements = raw_data.get("msg_elements")
+            raw_attrs = [
+                name
+                for name in ("message_type", "msg_elements", "attachments", "message_reference")
+                if _field(raw, name) is not None
+            ]
             logger.info(
                 f"[{_PLUGIN_NAME}] 消息中未找到图片：组件={component_names}，"
-                f"引用链={reply_chains}，raw_type={type(raw).__name__}，raw_keys={raw_keys}"
+                f"引用链={reply_chains}，raw_type={type(raw).__name__}，"
+                f"raw_attrs={raw_attrs}，raw_data_keys={raw_keys}，"
+                f"msg_elements={len(elements) if isinstance(elements, list) else 0}"
             )
         return urls
 
